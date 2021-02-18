@@ -1,0 +1,9 @@
+server:
+  port: 8092
+spring:
+  application:
+    name: idms-gateway
+hystrix.command.fallbackcmd.execution.isolation.thread.timeoutInMilliseconds: 5000
+eureka:
+  instance:
+    prefer-ip-address: true

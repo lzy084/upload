@@ -1,0 +1,27 @@
+eureka:
+  client:
+    service-url:
+      defaultZone: http://192.168.0.130:8001/eureka,http://192.168.0.131:8001/eureka
+#  instance:
+#   instance-id: 192.168.1.5:8010
+#    spring:
+#      cloud:
+#        inetutils:
+#          ignored-interfaces: VMware Virtual Ethernet Adapter for VMnet8,VMware Virtual Ethernet Adapter for VMnet1
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: upload-service
+          uri: lb://upload-service
+          predicates:
+            - Path=/api/v1/upload/**
+          filters:
+            - StripPrefix= 2
+      discovery:
+        locator:
+          lower-case-service-id: true
+          enabled: true
+    loadbalancer:
+      ribbon:
+        enabled: false
