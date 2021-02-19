@@ -2,7 +2,6 @@ package com.example.upload.rule;
 
 import com.example.upload.filter.CustomerLbProperties;
 import lombok.extern.slf4j.Slf4j;
-import org.bouncycastle.cert.ocsp.Req;
 import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.discovery.DiscoveryClient;
 import org.springframework.cloud.client.loadbalancer.reactive.DefaultResponse;
