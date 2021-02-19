@@ -25,3 +25,11 @@ spring:
     loadbalancer:
       ribbon:
         enabled: false
+cloud:
+  gateway:
+    customer:
+      lbs:
+       - url: /api/v1/
+         serviceId: abc
+       - url: /api/v2/
+         serviceId: adc

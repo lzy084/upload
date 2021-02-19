@@ -1,5 +1,6 @@
 package com.example.upload.filter;
 
+import com.example.upload.rule.IpHashLoadBalancer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerUriTools;
@@ -25,88 +26,83 @@ import java.util.Objects;
 
 import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.*;
 
+/**
+ * 自定义负载均衡Filter
+ */
 @Slf4j
-public class CustomLoadBalancerClientFilter implements GlobalFilter, Ordered {
-    private static final int LOAD_BALANCER_CLIENT_FILTER_ORDER = 10149;
-
-    private final LoadBalancerClientFactory clientFactory;
-
+public class CustomLoadBalancerClientFilter extends ReactiveLoadBalancerClientFilter {
+    private final CustomerLbProperties customerLbProperties;
     private final LoadBalancerProperties properties;
+    private final LoadBalancerClientFactory clientFactory;
+    private final IpHashLoadBalancer loadBalancer;
 
     public CustomLoadBalancerClientFilter(LoadBalancerClientFactory clientFactory,
-                                          LoadBalancerProperties properties) {
+                                          LoadBalancerProperties properties,
+                                          CustomerLbProperties customerLbProperties,
+                                          IpHashLoadBalancer loadBalancer) {
+        super(clientFactory, properties);
+        this.customerLbProperties = customerLbProperties;
         this.clientFactory = clientFactory;
         this.properties = properties;
+        this.loadBalancer = loadBalancer;
     }
 
-    @Override
-    public int getOrder() {
-        return LOAD_BALANCER_CLIENT_FILTER_ORDER;
-    }
-
+    /**
+     * 针对配置参数中的url 进行拦截并指定期负载均衡策略为 ipHash
+     *
+     * @param exchange HTTP请求-响应交互。提供对HTTP的访问请求和响应，并公开额外的服务器端处理,相关属性和特性
+     * @param chain    为请求的链式拦截器，链接的Web请求处理可能用于实现横切的
+     * @return Mono<Void>
+     */
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        URI url = exchange.getAttribute(GATEWAY_REQUEST_URL_ATTR);
-        String schemePrefix = exchange.getAttribute(GATEWAY_SCHEME_PREFIX_ATTR);
-        if (url == null
-                || (!"lb".equals(url.getScheme()) && !"lb".equals(schemePrefix))) {
-            return chain.filter(exchange);
+        String path = exchange.getRequest().getPath().value();
+        if (customerLbProperties != null) {
+            if (customerLbProperties.getLbsList() != null && customerLbProperties.getLbsList().size() > 0) {
+                boolean isMatch = customerLbProperties.getLbsList().stream().anyMatch(n -> path.contains(n.getUrl()));
+                if (isMatch) {
+                    return choose(exchange).doOnNext(response -> {
+                        URI url = exchange.getAttribute(GATEWAY_REQUEST_URL_ATTR);
+                        if (!response.hasServer()) {
+                            throw NotFoundException.create(properties.isUse404(),
+                                    "Unable to find instance for " + url.getHost());
+                        }
+                        String schemePrefix = exchange.getAttribute(GATEWAY_SCHEME_PREFIX_ATTR);
+                        String overrideScheme = null;
+                        if (schemePrefix != null) {
+                            overrideScheme = url.getScheme();
+                        }
+                        DelegatingServiceInstance serviceInstance = new DelegatingServiceInstance(
+                                response.getServer(), overrideScheme);
+                        URI requestUrl = reconstructURI(serviceInstance, exchange.getRequest().getURI());
+                        exchange.getAttributes().put(GATEWAY_REQUEST_URL_ATTR, requestUrl);
+                    }).then(chain.filter(exchange));
+                } else {
+                    return super.filter(exchange, chain);
+                }
+            } else {
+                return super.filter(exchange, chain);
+            }
+        } else {
+            return super.filter(exchange, chain);
         }
-        // preserve the original url
-        addOriginalRequestUrl(exchange, url);
-
-        if (log.isTraceEnabled()) {
-            log.trace(ReactiveLoadBalancerClientFilter.class.getSimpleName()
-                    + " url before: " + url);
-        }
-
-        return choose(exchange).doOnNext(response -> {
-
-            if (!response.hasServer()) {
-                throw NotFoundException.create(properties.isUse404(),
-                        "Unable to find instance for " + url.getHost());
-            }
-
-            ServiceInstance retrievedInstance = response.getServer();
-
-            URI uri = exchange.getRequest().getURI();
-            String overrideScheme = retrievedInstance.isSecure() ? "https" : "http";
-            if (schemePrefix != null) {
-                overrideScheme = url.getScheme();
-            }
-
-            DelegatingServiceInstance serviceInstance = new DelegatingServiceInstance(
-                    retrievedInstance, overrideScheme);
-
-            URI requestUrl = reconstructURI(serviceInstance, uri);
-
-            if (log.isTraceEnabled()) {
-                log.trace("LoadBalancerClientFilter url chosen: " + requestUrl);
-            }
-            exchange.getAttributes().put(GATEWAY_REQUEST_URL_ATTR, requestUrl);
-        }).then(chain.filter(exchange));
     }
 
-    protected URI reconstructURI(ServiceInstance serviceInstance, URI original) {
-        return LoadBalancerUriTools.reconstructURI(serviceInstance, original);
-    }
-
+    /**
+     * 根据配置的url 选择执行要执行的负载均衡策略
+     *
+     * @param exchange HTTP请求-响应交互。提供对HTTP的访问请求和响应
+     * @return Response<ServiceInstance>
+     */
     private Mono<Response<ServiceInstance>> choose(ServerWebExchange exchange) {
         URI uri = exchange.getAttribute(GATEWAY_REQUEST_URL_ATTR);
-        ReactorLoadBalancer<ServiceInstance> loadBalancer = this.clientFactory
-                .getInstance(uri.getHost(), ReactorLoadBalancer.class, ServiceInstance.class);
-        if (loadBalancer == null) {
-            throw new NotFoundException("No loadbalancer available for " + uri.getHost());
+        if (loadBalancer != null) {
+            return loadBalancer.choose(new DefaultRequest<>(exchange));
+        } else {
+            assert uri != null;
+            log.error("No loadbalancer available for:{}", uri.getHost());
+            throw new NotFoundException("No loadbalancer available for" + uri.getHost());
         }
-        return loadBalancer.choose(createRequest(exchange));
     }
 
-    private Request<String> createRequest(ServerWebExchange exchange) {
-        String ip = Objects.requireNonNull(exchange
-                .getRequest()
-                .getLocalAddress())
-                .getAddress()
-                .getHostAddress();
-        return new DefaultRequest<>(ip);
-    }
 }
