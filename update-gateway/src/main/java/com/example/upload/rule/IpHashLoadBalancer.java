@@ -42,7 +42,7 @@ public class IpHashLoadBalancer implements ReactorServiceInstanceLoadBalancer {
             log.warn("No severs available for is empty !");
             return Mono.just(new EmptyResponse()) ;
         }
-        if (properties.getLbsList().stream().anyMatch(n -> originalUrl.getPath().contains(n.getUrl()))) {
+        if (properties.getLbs().stream().anyMatch(n -> originalUrl.getPath().contains(n.getUrl()))) {
             int hash = instanceId.hashCode() >>> 16;
             int index = hash % serviceInstances.size();
             return Mono.just(new DefaultResponse(serviceInstances.get(index)));
@@ -51,7 +51,7 @@ public class IpHashLoadBalancer implements ReactorServiceInstanceLoadBalancer {
     }
 
     private List<ServiceInstance> getServiceInstance() {
-        List<CustomerLbProperties.Lbs> lbsList = properties.getLbsList();
+        List<CustomerLbProperties.Lbs> lbsList = properties.getLbs();
         List<ServiceInstance> serviceInstances = new ArrayList<>(8);
         for (CustomerLbProperties.Lbs lb : lbsList) {
             serviceInstances.addAll(discoveryClient.getInstances(lb.getServiceId()));

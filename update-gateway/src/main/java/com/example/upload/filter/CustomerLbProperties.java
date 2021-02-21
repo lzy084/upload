@@ -19,7 +19,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "cloud.gateway.customer")
 @Component
 public class CustomerLbProperties {
-    private List<Lbs> lbsList;
+    private List<Lbs> lbs;
     /**
      * 负载均衡参数 包含需要指定的负载均衡的url，服务Id
      */

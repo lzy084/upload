@@ -50,8 +50,8 @@ public class CustomLoadBalancerClientFilter extends ReactiveLoadBalancerClientFi
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
         if (customerLbProperties != null) {
-            if (customerLbProperties.getLbsList() != null && customerLbProperties.getLbsList().size() > 0) {
-                boolean isMatch = customerLbProperties.getLbsList().stream().anyMatch(n -> path.contains(n.getUrl()));
+            if (customerLbProperties.getLbs() != null && customerLbProperties.getLbs().size() > 0) {
+                boolean isMatch = customerLbProperties.getLbs().stream().anyMatch(n -> path.contains(n.getUrl()));
                 if (isMatch) {
                     return choose(exchange).doOnNext(response -> {
                         URI url = exchange.getAttribute(GATEWAY_REQUEST_URL_ATTR);
